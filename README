@@ -1,27 +1,14 @@
-johns/service
+       _               
+|  _ _|_ o     _  |  o 
+| (_) |  |    (_  |  | 
 
-Hey this is a template service - anytime I work on something new I just clone
-this repo & edit a few config values (ie; name, etc).
+Hiya friend, 
 
-The config values are in the Makefile after changing them run:
+This lofi cli was made as a learning experience during 
+a batch at the recurse center. 
 
-    make rename
+To participate you'll need to have a public key registered
+to a username.
 
-To propogate your config throughout; this will create a new go module and you
-can start building things with:
-
-    make
-
-If you don't have go installed you can run:
-
-    make install-scripts
-
-This will download some bash scripts, as with any scripts online, do not run
-them without reading them. 
-
-Now install go with either:
-
-    ./sudo install-go linux # for linux
-    or     
-    ./sudo install-go darwin #for macOS
-
+Recursers are welcome to register a key, however, please know
+that this is for testing & learning purposes only.
