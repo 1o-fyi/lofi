@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -181,27 +183,37 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 
 	// parse the private key of the receiver
 	var id *age.X25519Identity
+	var err error = errors.New("failed to parse private key")
+outerloop:
 	for _, k := range lib.NewDirectoryGraph(flagPath).OpenAll(lib.EXT_AGE) {
-		raw, err := io.ReadAll(k)
-		if err != nil {
-			panic(err)
+		sc := bufio.NewScanner(k)
+		for sc.Scan() {
+			id, err = age.ParseX25519Identity(string(sc.Bytes()))
+			if err != nil {
+				continue
+			}
+			err = nil
+			break outerloop
 		}
-		id, err = age.ParseX25519Identity(string(raw))
-		if err != nil {
-			panic(err)
-		}
+	}
+	if err != nil {
+		log.Println("bad pk parse")
+		return
 	}
 
 	// setup a new client
 	c, err := lib.NewClient(flagApi, flagUser, id)
 	if err != nil {
-		panic(err)
+		log.Println("failed to parse client")
+		return
 	}
 
-	// get the message passed in
+	// make https request with the passed in
+	// message id https://api.com/get?flagMsgId
 	msg, err := c.Get(flagMsgId)
 	if err != nil {
-		panic(err)
+		log.Println("Unknown result from flag msg id")
+		return
 	}
 
 	// hex decode the result
@@ -210,13 +222,15 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 	// decrypt with local private key
 	rc, err := age.Decrypt(rd, id)
 	if err != nil {
-		panic(err)
+		log.Println("failed to decrypt: possibly wrong private key or malformed data")
+		return
 	}
 
 	// copy decryption to standard output
 	_, err = io.Copy(os.Stdout, rc)
 	if err != nil {
-		panic(err)
+		log.Println("failed to copy stdout")
+		return
 	}
 
 }
