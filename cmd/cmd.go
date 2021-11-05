@@ -12,9 +12,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	ErrIncorrectFlag = "setup: incorrect or missing flag(s)"
+)
+
 var (
+	flagMsg   = ""
+	flagRecip = ""
+	flagPath  = ""
+	flagApi   = "https://1o.fyi"
+	flagUser  = "nobody"
+	flagMsgId = ""
+
 	RootCmd *cobra.Command = &cobra.Command{
-		Use:   __USAGE,
+		Use:   "lofi",
 		Short: __SHORT,
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
 			os.Stdout.Write([]byte("\n"))
@@ -42,32 +53,23 @@ var (
 	}
 )
 
-var (
-	defaultMsg   = ""
-	defaultRecip = ""
-	defaultPath  = ""
-	defaultApi   = "https://1o.fyi"
-	defaultUser  = "nobody"
-	defaultMsgId = ""
-)
-
 func init() {
 
 	// flags for send/receive commands
-	sendCmd.PersistentFlags().StringVarP(&defaultMsg, "msg", "m", defaultMsg, "message")
-	sendCmd.PersistentFlags().StringVarP(&defaultRecip, "recip", "r", defaultRecip, "recipients user name")
-	receiveCmd.PersistentFlags().StringVarP(&defaultPath, "path", "p", defaultPath, "absolute path to private key")
-	receiveCmd.PersistentFlags().StringVarP(&defaultMsgId, "msgid", "k", defaultMsgId, "message id you will receive")
+	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
+	sendCmd.PersistentFlags().StringVarP(&flagRecip, "recip", "r", flagRecip, "recipient user name")
+	receiveCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
+	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
 
 	// Mark flags as required for sending and receiving
 	sendCmd.MarkFlagRequired("m")
 	sendCmd.MarkFlagRequired("r")
+	receiveCmd.MarkFlagRequired("p")
 	receiveCmd.MarkFlagRequired("k")
-	receiveCmd.MarkFlagRequired("i")
 
 	// Flags for the root cmds
-	RootCmd.PersistentFlags().StringVarP(&defaultApi, "api", "A", defaultApi, "api endpoint")
-	RootCmd.PersistentFlags().StringVarP(&defaultUser, "user", "u", defaultUser, "default user")
+	RootCmd.PersistentFlags().StringVarP(&flagApi, "api", "A", flagApi, "api endpoint")
+	RootCmd.PersistentFlags().StringVarP(&flagUser, "user", "U", flagUser, "flag user")
 	RootCmd.AddCommand(sendCmd, receiveCmd, infoCmd)
 }
 
@@ -75,19 +77,44 @@ func Execute() {
 	if err := RootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+	os.Exit(0)
+}
+
+func anyInvalid(flags ...string) bool {
+	for _, flag := range flags {
+		if len(flag) == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Encrypts and sends a message
 func SendMSG(cmd *cobra.Command, args []string) {
-	key, _ := age.GenerateX25519Identity()
-	c, _ := lib.NewClient(defaultApi, defaultUser, key)
+	// check that we received the correct flags else return early
+	if anyInvalid(flagMsg, flagRecip, flagApi, flagUser) {
+		cmd.Help()
+		os.Stdout.Write([]byte(ErrIncorrectFlag))
+		return
+	}
 
-	rawPubKey, err := c.Get(defaultRecip)
+	// TODO: this private key is generated for each message sent and will share
+	// its public key with the server despite the server not doing anything with the value
+	// at the moment.
+	// questions i have;
+	//		- should we remove it entirely?
+	// 		- maybe we use this as a session key?
+	key, _ := age.GenerateX25519Identity()
+	c, _ := lib.NewClient(flagApi, flagUser, key)
+
+	// Query for the recipients public key.
+	rawPubKey, err := c.Get(flagRecip)
 	if err != nil {
 		log.Printf("failed to parse public key")
 		return
 	}
 
+	// Parse the raw public key into an age recipient.
 	recips, err := age.ParseRecipients(bytes.NewReader(rawPubKey))
 	if err != nil {
 		log.Printf("failed to parse recipients")
@@ -110,21 +137,26 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	}
 
 	// Write plaintext message into writercloser buffer.
-	if _, err = wc.Write([]byte(defaultMsg)); err != nil {
+	if _, err = wc.Write([]byte(flagMsg)); err != nil {
 		log.Printf("failed to write buffer")
 		return
 	}
 
 	// Close writercloser and flush encrypted message to encBuffer
-	wc.Close()
+	if err = wc.Close(); err != nil {
+		log.Println("error closing buffer")
+		return
+	}
 
-	// Grabs 4 bits of entropy
-	uuid := <-lib.EncodeHex(lib.Rpb(4))
+	// Grabs 256 bits of entropy
+	uuid := <-lib.EncodeHex(lib.Rpb(256))
 
 	// Grabs 4 bytes of the public key, starting at the 4th byte of the key
 	strK := fmt.Sprintf("%s", recips[0])[4:8]
-	msgK := append([]byte(strK+"-"), uuid...)
+	msgK := append([]byte(strK+"-"), uuid[:4]...)
 
+	// hex encode the encrypted buffer & set the message key to the resulting
+	// value on the server.
 	_, err = c.Set(string(msgK), string(<-lib.EncodeHex(encBuffer.Bytes())))
 	if err != nil {
 		log.Printf("error sending set request")
@@ -138,11 +170,18 @@ func SendMSG(cmd *cobra.Command, args []string) {
 
 }
 
-// Decrypts and sends a message
+// Receives and decrypts a message
 func RecvMSG(cmd *cobra.Command, args []string) {
+	// check that we received the correct flags else return early
+	if anyInvalid(flagPath, flagMsgId, flagApi, flagUser) {
+		cmd.Help()
+		os.Stdout.Write([]byte(ErrIncorrectFlag))
+		return
+	}
+
 	// parse the private key of the receiver
 	var id *age.X25519Identity
-	for _, k := range lib.NewDirectoryGraph(defaultPath).OpenAll(lib.EXT_AGE) {
+	for _, k := range lib.NewDirectoryGraph(flagPath).OpenAll(lib.EXT_AGE) {
 		raw, err := io.ReadAll(k)
 		if err != nil {
 			panic(err)
@@ -154,13 +193,13 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 	}
 
 	// setup a new client
-	c, err := lib.NewClient(defaultApi, defaultUser, id)
+	c, err := lib.NewClient(flagApi, flagUser, id)
 	if err != nil {
 		panic(err)
 	}
 
 	// get the message passed in
-	msg, err := c.Get(defaultMsgId)
+	msg, err := c.Get(flagMsgId)
 	if err != nil {
 		panic(err)
 	}

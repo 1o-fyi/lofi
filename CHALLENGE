@@ -1,0 +1,9 @@
+There is a flaw in this protocol, can you find it?
+
+What changes could be made to prevent this?
+
+Hints are base64 encoded, use as ya need:
+
+	$ cat .hints/{1,2} | base64 -d
+
+
