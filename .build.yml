@@ -1,0 +1,7 @@
+image: ubuntu/21.10
+sources:
+- https://git.sr.ht/~johns/install-go
+tasks:
+- build: |
+    sudo ./install-go/install-go
+    cd lofi && make

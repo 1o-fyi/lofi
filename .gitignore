@@ -1,0 +1,20 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+.xor.*
+*.test
+*.out
+
+# scripts
+install-go
+tag
+lofi
+service
+*.age
+
+# local build directory
+/github.com/*
+/git.sr.ht/
