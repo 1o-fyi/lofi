@@ -2,37 +2,3 @@
 |  _ _|_ o     _  |  o 
 | (_) |  |    (_  |  | 
 
-Hiya friend, 
-
-This lofi cli was made as a learning experience during 
-a batch at the recurse center. 
-
-To participate you'll need to have a public key registered
-to a username.
-
-Recursers are welcome to register a key, however, please know
-that this is for testing & learning purposes only.
-
--	-	-	-	-
-
-To build locally first clone this repository
-	
-	$  git clone https://git.sr.ht/~johns/lofi	
-	$  cd lofi
-
-Now compile with
-
-	$ make
-	$ ./lofi
-
-Requires make & go 1.17.*, to download a bash script for
-installing the latest version of Go run:
-
-	$ make install-scripts
-
-As with any script you've downloaded online, read it
-before ya run it.
-
-	$ ./install-go
-
-
