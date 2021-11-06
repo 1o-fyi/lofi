@@ -1,9 +1,10 @@
-module git.sr.ht/~johns/lofi
+module github.com/1o-fyi/lofi
 
 go 1.17
 
 require (
 	filippo.io/age v1.0.0
+	git.sr.ht/~johns/lofi v0.0.0-20211106020931-943f80976f43
 	git.sr.ht/~lofi/lib v0.0.10
 	github.com/spf13/cobra v1.2.1
 )
