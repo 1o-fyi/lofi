@@ -7,6 +7,7 @@ SHELL := /bin/bash
 NAME := lofi
 USER := johns
 HOST := git.sr.ht
+UPSTREAM := github.com
 
 CAP-ALL := cfg/all-caps.cfg
 CAP-BIND := cfg/bind-cap.cfg

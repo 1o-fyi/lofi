@@ -39,6 +39,8 @@ cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 filippo.io/age v1.0.0 h1:V6q14n0mqYU3qKFkZ6oOaF9oXneOviS3ubXsSVBRSzc=
 filippo.io/age v1.0.0/go.mod h1:PaX+Si/Sd5G8LgfCwldsSba3H1DDQZhIhFGkhbHaBq8=
+git.sr.ht/~johns/lofi v0.0.0-20211106020931-943f80976f43 h1:3U9HpBviEh3GhgkjPLFD+3A1x7t0ialhMox/+C5Sxv8=
+git.sr.ht/~johns/lofi v0.0.0-20211106020931-943f80976f43/go.mod h1:cNvuMCMZNNRfVzBxx6WjE+EbaozxQHsalVX+IbnnXng=
 git.sr.ht/~lofi/lib v0.0.10 h1:3LYPrIfWQTQTdqKj+ZTfVVoXZz5fHFF70pfonrYH0eQ=
 git.sr.ht/~lofi/lib v0.0.10/go.mod h1:73Uyg0sHjhOGMS9wybiSVkg8vDqJIZGLpOxdJArGo78=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
