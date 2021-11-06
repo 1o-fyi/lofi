@@ -7,6 +7,7 @@
 .xor.*
 *.test
 *.out
+*.patch
 
 # scripts
 install-go

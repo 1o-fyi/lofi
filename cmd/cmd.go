@@ -35,23 +35,26 @@ var (
 	}
 
 	infoCmd *cobra.Command = &cobra.Command{
-		Use:   "info",
-		Short: "learn about lofi cli",
+		Use:     "info",
+		Aliases: []string{"i"},
+		Short:   "learn about lofi cli",
 		Run: func(cmd *cobra.Command, args []string) {
 			os.Stdout.Write([]byte(__INFO))
 		},
 	}
 
 	sendCmd *cobra.Command = &cobra.Command{
-		Use:   "s",
-		Short: "encrypt and send a message",
-		Run:   SendMSG,
+		Use:     "send",
+		Aliases: []string{"s"},
+		Short:   "encrypt and send a message",
+		Run:     SendMSG,
 	}
 
 	receiveCmd *cobra.Command = &cobra.Command{
-		Use:   "r",
-		Short: "receive and decrypt a message",
-		Run:   RecvMSG,
+		Use:     "receive",
+		Aliases: []string{"recv", "r"},
+		Short:   "receive and decrypt a message",
+		Run:     RecvMSG,
 	}
 )
 
