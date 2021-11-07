@@ -1,13 +1,12 @@
 package cmd
 
 import (
-	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"syscall"
 
 	"filippo.io/age"
 	"git.sr.ht/~lofi/lib"
@@ -19,12 +18,13 @@ const (
 )
 
 var (
-	flagMsg   = ""
-	flagRecip = ""
-	flagPath  = ""
-	flagApi   = "https://1o.fyi"
-	flagUser  = "nobody"
-	flagMsgId = ""
+	flagMsg           = ""
+	flagRecip         = ""
+	flagPath          = ""
+	flagApi           = "https://1o.fyi"
+	flagUser          = "nobody"
+	flagMsgId         = ""
+	flagMinimalOutput bool
 
 	RootCmd *cobra.Command = &cobra.Command{
 		Use:   "lofi",
@@ -73,6 +73,7 @@ func init() {
 	receiveCmd.MarkFlagRequired("k")
 
 	// Flags for the root cmds
+	RootCmd.PersistentFlags().BoolVarP(&flagMinimalOutput, "q", "q", false, "minimal out")
 	RootCmd.PersistentFlags().StringVarP(&flagApi, "api", "A", flagApi, "api endpoint")
 	RootCmd.PersistentFlags().StringVarP(&flagUser, "user", "U", flagUser, "flag user")
 	RootCmd.AddCommand(sendCmd, receiveCmd, infoCmd)
@@ -142,7 +143,7 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	}
 
 	// Write plaintext message into writercloser buffer.
-	if _, err = wc.Write([]byte(flagMsg)); err != nil {
+	if _, err = wc.Write(<-lib.EncodeHex([]byte(flagMsg))); err != nil {
 		log.Printf("failed to write buffer")
 		return
 	}
@@ -169,10 +170,16 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	}
 
 	// Write the uuid fo the message to Stdout for receiver
-	os.Stdout.Write([]byte("\nsent! to receive your message run:\n\n"))
-	os.Stdout.Write(append([]byte("\tlofi r -k "), msgK...))
+	if !flagMinimalOutput {
+		os.Stdout.Write([]byte("\nsent! share this with your recipient:\n\n"))
+		os.Stdout.Write(append([]byte("\tlofi r -k "), msgK...))
+		os.Stdout.Write([]byte(" -p /path/to/your/privat_key"))
+		os.Stdout.Write([]byte("\n"))
+		return
+	}
 	os.Stdout.Write([]byte("\n"))
-
+	os.Stdout.Write(msgK)
+	os.Stdout.Write([]byte("\n"))
 }
 
 // Receives and decrypts a message
@@ -186,19 +193,26 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 
 	// parse the private key of the receiver
 	var id *age.X25519Identity
-	var err error = errors.New("failed to parse private key")
-outerloop:
-	for _, k := range lib.NewDirectoryGraph(flagPath).OpenAll(lib.EXT_AGE) {
-		sc := bufio.NewScanner(k)
-		for sc.Scan() {
-			id, err = age.ParseX25519Identity(string(sc.Bytes()))
-			if err != nil {
-				continue
-			}
-			err = nil
-			break outerloop
-		}
+	id, _ = age.GenerateX25519Identity()
+	if id == nil {
+		return
 	}
+
+	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
+
+	if errno != nil {
+		log.Printf("parse error: private key at %s", flagPath)
+		return
+	}
+	f := os.NewFile(uintptr(fd), flagPath)
+
+	_mat, err := io.ReadAll(f)
+	if err != nil {
+		log.Printf("parse error: private key at %s", flagPath)
+		return
+	}
+
+	id, err = age.ParseX25519Identity(string(_mat))
 	if err != nil {
 		log.Println("bad pk parse")
 		return
@@ -208,6 +222,8 @@ outerloop:
 	c, err := lib.NewClient(flagApi, flagUser, id)
 	if err != nil {
 		log.Println("failed to parse client")
+
+		log.Println(err)
 		return
 	}
 
@@ -229,8 +245,13 @@ outerloop:
 		return
 	}
 
+	buff := bytes.NewBuffer([]byte{})
 	// copy decryption to standard output
-	_, err = io.Copy(os.Stdout, rc)
+	_, err = io.Copy(buff, rc)
+
+	// decode hex one last time to get original message
+	os.Stdout.Write(<-lib.DecodeHex(buff.Bytes()))
+
 	if err != nil {
 		log.Println("failed to copy stdout")
 		return
