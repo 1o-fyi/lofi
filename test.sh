@@ -14,8 +14,8 @@ function clean
     rm -rf *.age.pub *.age
 }
 
-# compile
-make
+if ! [ -f "./lofi" ]; then echo "no local build" && exit 1; fi
+
 
 # setup alice, bob keys
 _alice="alice"
