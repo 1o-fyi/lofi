@@ -13,6 +13,7 @@ jobs:
 
       - name: compile & run
         run: |
+          sudo apt install age
           make install-scripts
           sudo ./install-go
           make
