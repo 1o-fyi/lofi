@@ -16,3 +16,4 @@ jobs:
           make install-scripts
           sudo ./install-go
           make
+          ./test.sh
