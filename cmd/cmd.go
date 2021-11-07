@@ -118,8 +118,8 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	for _, flagRecip := range flagRecips {
 		rawPubKey, err := c.Get(flagRecip)
 		if err != nil {
-			log.Printf("failed to parse public key")
-			continue
+			log.Printf("failed to parse public key %s", flagRecip)
+			return
 		}
 		rawPubKeys = append(rawPubKeys, rawPubKey)
 	}
