@@ -13,7 +13,5 @@ jobs:
 
       - name: compile & run
         run: |
-          # setup
           make install-scripts
-          sudo ./install-go
-          ./test.sh
+          make
