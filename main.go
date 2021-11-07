@@ -1,10 +1,7 @@
 package main
 
-import (
-	"git.sr.ht/~johns/lofi/cmd"
-)
+import "github.com/1o-fyi/lofi/cmd"
 
 func main() {
-	l
-	//cmd.Execute()
+	cmd.Execute()
 }
