@@ -1,6 +1,6 @@
 ### Security
 
-Hi, this project/repository if for learning & experimenting only.
+Hi, this project/repository is for learning & testing only.
 
 If you have any security concerns please reach out to: 
 
