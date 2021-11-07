@@ -2,14 +2,16 @@ package cmd
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"io"
 	"log"
+	"math/big"
 	"os"
 	"syscall"
 
 	"filippo.io/age"
 	"git.sr.ht/~lofi/lib"
+	"github.com/keep-network/keep-core/pkg/bls"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +65,7 @@ func init() {
 	// flags for send/receive commands
 	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
 	sendCmd.PersistentFlags().StringVarP(&flagRecip, "recip", "r", flagRecip, "recipient user name")
+	sendCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
 	receiveCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
 	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
 
@@ -154,12 +157,27 @@ func SendMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Grabs 256 bits of entropy
-	uuid := <-lib.EncodeHex(lib.Rpb(256))
+	id, err := parseId()
+	if err != nil {
+		panic(err)
+	}
 
-	// Grabs 4 bytes of the public key, starting at the 4th byte of the key
-	strK := fmt.Sprintf("%s", recips[0])[4:8]
-	msgK := append([]byte(strK+"-"), uuid[:4]...)
+	// parse the age secret key
+	sk := lib.Ss(id.String())
+	skShare := bls.GetSecretKeyShare([]*big.Int{sk.V}, 1)
+	pubk := skShare.PublicKeyShare().V
+	// map the key as point G1 onto pairing curve
+	signature := bls.Sign(sk.V, encBuffer.Bytes())
+
+	// verify our signature & message with our public key
+	if !bls.Verify(pubk, encBuffer.Bytes(), signature) {
+		panic("failed to verify BLS signature")
+	}
+
+	os.Stdout.Write(<-lib.EncodeHex(pubk.Marshal()))
+
+	// hex encode the signature and use it as the index for the message.
+	msgK := <-lib.EncodeHex(signature.Marshal())
 
 	// hex encode the encrypted buffer & set the message key to the resulting
 	// value on the server.
@@ -190,34 +208,11 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 		os.Stdout.Write([]byte(ErrIncorrectFlag))
 		return
 	}
-
-	// parse the private key of the receiver
-	var id *age.X25519Identity
-	id, _ = age.GenerateX25519Identity()
-	if id == nil {
-		return
-	}
-
-	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
-
-	if errno != nil {
-		log.Printf("parse error: private key at %s", flagPath)
-		return
-	}
-	f := os.NewFile(uintptr(fd), flagPath)
-
-	_mat, err := io.ReadAll(f)
+	id, err := parseId()
 	if err != nil {
-		log.Printf("parse error: private key at %s", flagPath)
+		log.Println(err)
 		return
 	}
-
-	id, err = age.ParseX25519Identity(string(_mat))
-	if err != nil {
-		log.Println("bad pk parse")
-		return
-	}
-
 	// setup a new client
 	c, err := lib.NewClient(flagApi, flagUser, id)
 	if err != nil {
@@ -257,4 +252,32 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
+}
+
+func parseId() (*age.X25519Identity, error) {
+	// parse the private key of the receiver
+	var id *age.X25519Identity
+	id, _ = age.GenerateX25519Identity()
+	if id == nil {
+		return nil, errors.New("failed to parse")
+	}
+
+	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
+	if errno != nil {
+		return nil, errors.New("failed to parse")
+	}
+
+	f := os.NewFile(uintptr(fd), flagPath)
+	_mat, err := io.ReadAll(f)
+	if err != nil {
+		log.Printf("parse error: private key at %s", flagPath)
+		return nil, errors.New("failed to parse")
+	}
+
+	id, err = age.ParseX25519Identity(string(_mat))
+	if err != nil {
+		log.Println("bad pk parse")
+		return nil, errors.New("failed to parse")
+	}
+	return id, nil
 }
