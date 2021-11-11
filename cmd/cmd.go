@@ -93,20 +93,20 @@ func init() {
 	// flags for send/receive commands
 	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
 	sendCmd.PersistentFlags().StringVarP(&flagRecip, "recip", "r", flagRecip, "recipient user name")
-	sendCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
 	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
-	RootCmd.PersistentFlags().StringVarP(&flagPath, "path", "P", flagPath, "absolute path to private key")
 
 	// Mark flags as required for sending and receiving
 	sendCmd.MarkFlagRequired("m")
 	sendCmd.MarkFlagRequired("r")
-	receiveCmd.MarkFlagRequired("p")
 	receiveCmd.MarkFlagRequired("k")
+	receiveCmd.MarkFlagRequired("P")
+	RootCmd.MarkFlagRequired("U")
 
 	// Flags for the root cmds
 	RootCmd.PersistentFlags().BoolVarP(&flagMinimalOutput, "q", "q", false, "minimal out")
 	RootCmd.PersistentFlags().StringVarP(&flagApi, "api", "A", flagApi, "api endpoint")
 	RootCmd.PersistentFlags().StringVarP(&flagUser, "user", "U", flagUser, "flag user")
+	RootCmd.PersistentFlags().StringVarP(&flagPath, "path", "P", flagPath, "absolute path to private key")
 	RootCmd.AddCommand(sendCmd, receiveCmd, infoCmd, mapCmd)
 }
 
@@ -195,8 +195,8 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	fmtReq := func(_user, _signature, _mId, _msg string) string {
 		return fmt.Sprintf("%s/set?user=%s?sign=%s?mid=%s?msg=%s", flagApi, _user, _signature, _mId, _msg)
 	}
-
-	req := fmtReq(flagUser, string(hexSig), string(hexSig[:8]), string(hexBuffer))
+	mid := hexSig[:8]
+	req := fmtReq(flagUser, string(hexSig), string(mid), string(hexBuffer))
 
 	// hex encode the encrypted buffer & set the message key to the resulting
 	// value on the server.
@@ -208,13 +208,13 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	// Write the uuid fo the message to Stdout for receiver
 	if !flagMinimalOutput {
 		os.Stdout.Write([]byte("\nsent! share this with your recipient:\n\n"))
-		os.Stdout.Write(append([]byte("\tlofi r -k "), hexSig...))
+		os.Stdout.Write(append([]byte("\tlofi r -k "), mid...))
 		os.Stdout.Write([]byte("\n"))
 		return
 	}
 
 	os.Stdout.Write([]byte("\n"))
-	os.Stdout.Write([]byte(req))
+	os.Stdout.Write([]byte(mid))
 	os.Stdout.Write([]byte("\n"))
 }
 
