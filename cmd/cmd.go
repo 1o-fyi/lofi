@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -157,8 +158,17 @@ func SendMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	msgBlock := pem.Block{
+		Type:    "BLS-SIGNED",
+		Headers: make(map[string]string),
+		Bytes:   []byte(flagMsg),
+	}
+
+	msgBlock.Headers["stamp"] = lib.Context("msg")
+	msgBlock.Headers["from"] = flagUser
+	msgBlock.Headers["to"] = flagRecip
 	// Write plaintext message into writercloser buffer.
-	if _, err = wc.Write(<-lib.EncodeHex([]byte(flagMsg))); err != nil {
+	if _, err = wc.Write(<-lib.EncodeHex(pem.EncodeToMemory(&msgBlock))); err != nil {
 		log.Printf("failed to write buffer")
 		return
 	}
@@ -262,9 +272,21 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 	// copy decryption to standard output
 	_, err = io.Copy(buff, rc)
 
-	// decode hex one last time to get original message
-	os.Stdout.Write(<-lib.DecodeHex(buff.Bytes()))
+	block, _ := pem.Decode(<-lib.DecodeHex(buff.Bytes()))
 
+	if block == nil {
+		log.Println("err decoing pem block")
+		return
+	}
+
+	os.Stdout.WriteString("\n- - -")
+	// decode hex one last time to get original message
+	for header, val := range block.Headers {
+		os.Stdout.WriteString(fmt.Sprintf("\n%s: %s", header, val))
+	}
+	os.Stdout.WriteString("\n- -\n")
+	os.Stdout.Write(block.Bytes)
+	os.Stdout.WriteString("\n\n- - -")
 	if err != nil {
 		log.Println("failed to copy stdout")
 		return
