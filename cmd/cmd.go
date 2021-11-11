@@ -2,27 +2,30 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"syscall"
 
 	"filippo.io/age"
 	"git.sr.ht/~lofi/lib"
+	"github.com/keep-network/keep-core/pkg/bls"
 	"github.com/spf13/cobra"
 )
 
 const (
-	ErrIncorrectFlag = "setup: incorrect or missing flag(s)"
+	ErrIncorrectFlag = "\nsetup: incorrect or missing flag(s)\n"
 )
 
 var (
+	flagApi           = "https://1o.fyi"
 	flagMsg           = ""
 	flagRecip         = ""
 	flagPath          = ""
-	flagApi           = "https://1o.fyi"
-	flagUser          = "nobody"
+	flagUser          = ""
 	flagMsgId         = ""
 	flagMinimalOutput bool
 
@@ -40,6 +43,33 @@ var (
 		Short:   "learn about lofi cli",
 		Run: func(cmd *cobra.Command, args []string) {
 			os.Stdout.Write([]byte(__INFO))
+		},
+	}
+
+	// this command prints out a formatted registry string from a private key
+	// it requires the computation of G2.
+	mapCmd *cobra.Command = &cobra.Command{
+		Use:     "fmt",
+		Aliases: []string{"f"},
+		Short:   `formats public keys for a registry line | username::age_public_key::G2_public_key`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if anyInvalid(flagPath, flagUser) {
+				os.Stdout.Write([]byte("setup: requires a -U username and -P path to private key"))
+				return
+			}
+			id, err := parseId()
+			if err != nil {
+				os.Stdout.Write([]byte(err.Error()))
+				return
+			}
+			skShare := mapToKeyShare(id)
+			if skShare == nil {
+				os.Stdout.Write([]byte("error mapping to G2 curve"))
+			}
+
+			g2 := <-lib.EncodeHex(skShare.PublicKeyShare().V.Marshal())
+			os.Stdout.Write([]byte("\n" + flagUser + "::" + id.Recipient().String() + "::" + string(g2)))
+			os.Stdout.Write([]byte("\n"))
 		},
 	}
 
@@ -63,8 +93,9 @@ func init() {
 	// flags for send/receive commands
 	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
 	sendCmd.PersistentFlags().StringVarP(&flagRecip, "recip", "r", flagRecip, "recipient user name")
-	receiveCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
+	sendCmd.PersistentFlags().StringVarP(&flagPath, "path", "p", flagPath, "absolute path to private key")
 	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
+	RootCmd.PersistentFlags().StringVarP(&flagPath, "path", "P", flagPath, "absolute path to private key")
 
 	// Mark flags as required for sending and receiving
 	sendCmd.MarkFlagRequired("m")
@@ -76,23 +107,7 @@ func init() {
 	RootCmd.PersistentFlags().BoolVarP(&flagMinimalOutput, "q", "q", false, "minimal out")
 	RootCmd.PersistentFlags().StringVarP(&flagApi, "api", "A", flagApi, "api endpoint")
 	RootCmd.PersistentFlags().StringVarP(&flagUser, "user", "U", flagUser, "flag user")
-	RootCmd.AddCommand(sendCmd, receiveCmd, infoCmd)
-}
-
-func Execute() {
-	if err := RootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
-}
-
-func anyInvalid(flags ...string) bool {
-	for _, flag := range flags {
-		if len(flag) == 0 {
-			return true
-		}
-	}
-	return false
+	RootCmd.AddCommand(sendCmd, receiveCmd, infoCmd, mapCmd)
 }
 
 // Encrypts and sends a message
@@ -154,17 +169,38 @@ func SendMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Grabs 256 bits of entropy
-	uuid := <-lib.EncodeHex(lib.Rpb(256))
+	id, err := parseId()
+	if err != nil {
+		panic(err)
+	}
 
-	// Grabs 4 bytes of the public key, starting at the 4th byte of the key
-	strK := fmt.Sprintf("%s", recips[0])[4:8]
-	msgK := append([]byte(strK+"-"), uuid[:4]...)
+	// map the key as point G1 onto pairing curve
+	skShare := mapToKeyShare(id)
+
+	// get the public key (G2)
+	pubk := skShare.PublicKeyShare().V
+
+	// sign the enc message buffer
+	signature := bls.Sign(skShare.V, encBuffer.Bytes())
+	hexBuffer := <-lib.EncodeHex(encBuffer.Bytes())
+
+	// verify our signature & message with our public key
+	if !bls.Verify(pubk, encBuffer.Bytes(), signature) {
+		panic("failed to verify BLS signature")
+	}
+
+	// hex encode the signature and use it as the index for the message.
+	hexSig := <-lib.EncodeHex(signature.Marshal())
+
+	fmtReq := func(_user, _signature, _mId, _msg string) string {
+		return fmt.Sprintf("%s/set?user=%s?sign=%s?mid=%s?msg=%s", flagApi, _user, _signature, _mId, _msg)
+	}
+
+	req := fmtReq(flagUser, string(hexSig), string(hexSig[:8]), string(hexBuffer))
 
 	// hex encode the encrypted buffer & set the message key to the resulting
 	// value on the server.
-	_, err = c.Set(string(msgK), string(<-lib.EncodeHex(encBuffer.Bytes())))
-	if err != nil {
+	if _, err = http.Get(req); err != nil {
 		log.Printf("error sending set request")
 		return
 	}
@@ -172,13 +208,13 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	// Write the uuid fo the message to Stdout for receiver
 	if !flagMinimalOutput {
 		os.Stdout.Write([]byte("\nsent! share this with your recipient:\n\n"))
-		os.Stdout.Write(append([]byte("\tlofi r -k "), msgK...))
-		os.Stdout.Write([]byte(" -p /path/to/your/privat_key"))
+		os.Stdout.Write(append([]byte("\tlofi r -k "), hexSig...))
 		os.Stdout.Write([]byte("\n"))
 		return
 	}
+
 	os.Stdout.Write([]byte("\n"))
-	os.Stdout.Write(msgK)
+	os.Stdout.Write([]byte(req))
 	os.Stdout.Write([]byte("\n"))
 }
 
@@ -190,34 +226,11 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 		os.Stdout.Write([]byte(ErrIncorrectFlag))
 		return
 	}
-
-	// parse the private key of the receiver
-	var id *age.X25519Identity
-	id, _ = age.GenerateX25519Identity()
-	if id == nil {
-		return
-	}
-
-	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
-
-	if errno != nil {
-		log.Printf("parse error: private key at %s", flagPath)
-		return
-	}
-	f := os.NewFile(uintptr(fd), flagPath)
-
-	_mat, err := io.ReadAll(f)
+	id, err := parseId()
 	if err != nil {
-		log.Printf("parse error: private key at %s", flagPath)
+		log.Println(err)
 		return
 	}
-
-	id, err = age.ParseX25519Identity(string(_mat))
-	if err != nil {
-		log.Println("bad pk parse")
-		return
-	}
-
 	// setup a new client
 	c, err := lib.NewClient(flagApi, flagUser, id)
 	if err != nil {
@@ -257,4 +270,41 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
+}
+
+func parseId() (*age.X25519Identity, error) {
+	// parse the private key of the receiver
+	var id *age.X25519Identity
+	id, _ = age.GenerateX25519Identity()
+	if id == nil {
+		return nil, errors.New("failed to parse")
+	}
+
+	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
+	if errno != nil {
+		return nil, errors.New("failed to parse")
+	}
+
+	f := os.NewFile(uintptr(fd), flagPath)
+	_mat, err := io.ReadAll(f)
+	if err != nil {
+		log.Printf("parse error: private key at %s", flagPath)
+		return nil, errors.New("failed to parse")
+	}
+
+	id, err = age.ParseX25519Identity(string(_mat))
+	if err != nil {
+		log.Println("bad pk parse")
+		return nil, errors.New("failed to parse")
+	}
+	return id, nil
+}
+
+func anyInvalid(flags ...string) bool {
+	for _, flag := range flags {
+		if len(flag) == 0 {
+			return true
+		}
+	}
+	return false
 }
