@@ -269,18 +269,14 @@ func RecvMSG(cmd *cobra.Command, args []string) {
 	}
 
 	buff := bytes.NewBuffer([]byte{})
-	// copy decryption to standard output
 	_, err = io.Copy(buff, rc)
-
 	block, _ := pem.Decode(<-lib.DecodeHex(buff.Bytes()))
-
 	if block == nil {
 		log.Println("err decoing pem block")
 		return
 	}
 
 	os.Stdout.WriteString("\n- - -")
-	// decode hex one last time to get original message
 	for header, val := range block.Headers {
 		os.Stdout.WriteString(fmt.Sprintf("\n%s: %s", header, val))
 	}
