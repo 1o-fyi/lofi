@@ -24,7 +24,7 @@ const (
 var (
 	flagApi           = "https://1o.fyi"
 	flagMsg           = ""
-	flagRecip         = ""
+	flagRecips        = []string{}
 	flagPath          = ""
 	flagUser          = ""
 	flagMsgId         = ""
@@ -93,7 +93,7 @@ func init() {
 
 	// flags for send/receive commands
 	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
-	sendCmd.PersistentFlags().StringVarP(&flagRecip, "recip", "r", flagRecip, "recipient user name")
+	sendCmd.PersistentFlags().StringSliceVarP(&flagRecips, "recips", "r", flagRecips, "recipient user name(s)")
 	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
 
 	// Mark flags as required for sending and receiving
@@ -114,7 +114,7 @@ func init() {
 // Encrypts and sends a message
 func SendMSG(cmd *cobra.Command, args []string) {
 	// check that we received the correct flags else return early
-	if anyInvalid(flagMsg, flagRecip, flagApi, flagUser) {
+	if anyInvalid(flagMsg, flagApi, flagUser) || anyInvalid(flagRecips...) {
 		cmd.Help()
 		os.Stdout.Write([]byte(ErrIncorrectFlag))
 		return
@@ -130,14 +130,18 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	c, _ := lib.NewClient(flagApi, flagUser, key)
 
 	// Query for the recipients public key.
-	rawPubKey, err := c.Get(flagRecip)
-	if err != nil {
-		log.Printf("failed to parse public key")
-		return
+	rawPubKeys := [][]byte{}
+	for _, flagRecip := range flagRecips {
+		rawPubKey, err := c.Get(flagRecip)
+		if err != nil {
+			log.Printf("failed to parse public key %s", flagRecip)
+			return
+		}
+		rawPubKeys = append(rawPubKeys, rawPubKey)
 	}
 
 	// Parse the raw public key into an age recipient.
-	recips, err := age.ParseRecipients(bytes.NewReader(rawPubKey))
+	recips, err := age.ParseRecipients(bytes.NewReader(bytes.Join(rawPubKeys, []byte("\n"))))
 	if err != nil {
 		log.Printf("failed to parse recipients")
 		return
@@ -152,7 +156,7 @@ func SendMSG(cmd *cobra.Command, args []string) {
 	encBuffer := bytes.NewBuffer([]byte{})
 
 	// Encrypt to recip public key
-	wc, err := age.Encrypt(encBuffer, recips[0])
+	wc, err := age.Encrypt(encBuffer, recips...)
 	if err != nil {
 		log.Println("failed to encrypt")
 		return
