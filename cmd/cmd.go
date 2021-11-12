@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"syscall"
 
 	"filippo.io/age"
@@ -170,7 +171,7 @@ func SendMSG(cmd *cobra.Command, args []string) {
 
 	msgBlock.Headers["stamp"] = lib.Context("msg")
 	msgBlock.Headers["from"] = flagUser
-	msgBlock.Headers["to"] = flagRecip
+	msgBlock.Headers["to"] = strings.Join(flagRecips, ", ")
 	// Write plaintext message into writercloser buffer.
 	if _, err = wc.Write(<-lib.EncodeHex(pem.EncodeToMemory(&msgBlock))); err != nil {
 		log.Printf("failed to write buffer")
