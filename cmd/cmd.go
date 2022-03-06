@@ -23,12 +23,13 @@ const (
 )
 
 var (
-	flagApi           = "https://1o.fyi"
-	flagMsg           = ""
-	flagRecips        = []string{}
-	flagPath          = ""
-	flagUser          = ""
-	flagMsgId         = ""
+	flagApi           = "https://1o.fyi" // default API endpoint.
+	flagMsg           = ""               // The message to be sent.
+	flagFn            = ""               // The absolute filepath to be sent.
+	flagRecips        = []string{}       // the recipient names.
+	flagPath          = ""               // The path to the senders private key.
+	flagUser          = ""               // The sending users name.
+	flagMsgId         = ""               // An optional ID for the message to override the auto-generated ones
 	flagMinimalOutput bool
 
 	RootCmd *cobra.Command = &cobra.Command{
@@ -95,10 +96,10 @@ func init() {
 	// flags for send/receive commands
 	sendCmd.PersistentFlags().StringVarP(&flagMsg, "msg", "m", flagMsg, "message to send")
 	sendCmd.PersistentFlags().StringSliceVarP(&flagRecips, "recips", "r", flagRecips, "recipient user name(s)")
+	sendCmd.PersistentFlags().StringVarP(&flagFn, "fn", "f", flagFn, "file to send")
 	receiveCmd.PersistentFlags().StringVarP(&flagMsgId, "msgid", "k", flagMsgId, "message id to receive")
 
 	// Mark flags as required for sending and receiving
-	sendCmd.MarkFlagRequired("m")
 	sendCmd.MarkFlagRequired("r")
 	receiveCmd.MarkFlagRequired("k")
 	receiveCmd.MarkFlagRequired("P")
@@ -115,7 +116,7 @@ func init() {
 // Encrypts and sends a message
 func SendMSG(cmd *cobra.Command, args []string) {
 	// check that we received the correct flags else return early
-	if anyInvalid(flagMsg, flagApi, flagUser) || anyInvalid(flagRecips...) {
+	if allInvalid(flagMsg, flagFn) || anyInvalid(flagApi, flagUser) || anyInvalid(flagRecips...) {
 		cmd.Help()
 		os.Stdout.Write([]byte(ErrIncorrectFlag))
 		return
@@ -163,10 +164,31 @@ func SendMSG(cmd *cobra.Command, args []string) {
 		return
 	}
 
+	// TODO: make it so messages and/or files can be sent
+	//	 for now if flagFn is passed in then it will override
+	//	 and flagMsg that is passed.
+	var content []byte = []byte{}
+	var _err error
+	var fd *os.File
+	if len(flagFn) != 0 {
+		fd, _err = os.Open(flagFn)
+		if _err != nil {
+			fmt.Printf("failed to open file at path: %s", flagFn)
+			return
+		}
+		content, _err = io.ReadAll(fd)
+		if err != nil {
+			fmt.Printf("failed to read open file at path: %s", flagFn)
+			return
+		}
+	} else {
+		content = []byte(flagMsg)
+	}
+
 	msgBlock := pem.Block{
 		Type:    "BLS-SIGNED",
 		Headers: make(map[string]string),
-		Bytes:   []byte(flagMsg),
+		Bytes:   content,
 	}
 
 	msgBlock.Headers["stamp"] = lib.Context("msg")
@@ -322,6 +344,16 @@ func parseId() (*age.X25519Identity, error) {
 	}
 
 	return id, nil
+}
+
+func allInvalid(flags ...string) bool {
+	var numInvalid int = 0
+	for _, flag := range flags {
+		if len(flag) == 0 {
+			numInvalid += 1
+		}
+	}
+	return numInvalid == len(flags)
 }
 
 func anyInvalid(flags ...string) bool {
