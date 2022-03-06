@@ -300,26 +300,27 @@ func parseId() (*age.X25519Identity, error) {
 	var id *age.X25519Identity
 	id, _ = age.GenerateX25519Identity()
 	if id == nil {
-		return nil, errors.New("failed to parse")
+		return nil, errors.New("failed to generate age identity")
 	}
 
 	fd, errno := syscall.Open(flagPath, os.O_RDONLY, 077)
 	if errno != nil {
-		return nil, errors.New("failed to parse")
+		return nil, errors.New("failed to open key")
 	}
 
 	f := os.NewFile(uintptr(fd), flagPath)
 	_mat, err := io.ReadAll(f)
 	if err != nil {
-		log.Printf("parse error: private key at %s", flagPath)
-		return nil, errors.New("failed to parse")
+		msg := fmt.Sprintf("read error: private key at %s", flagPath)
+		return nil, errors.New(msg)
 	}
 
 	id, err = age.ParseX25519Identity(string(_mat))
 	if err != nil {
-		log.Println("bad pk parse")
-		return nil, errors.New("failed to parse")
+		msg := fmt.Sprintf("parse error: private key at %s", flagPath)
+		return nil, errors.New(msg)
 	}
+
 	return id, nil
 }
 
